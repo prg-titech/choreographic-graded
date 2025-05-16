@@ -56,6 +56,9 @@ library
     Choreographic.Graded.Operation
     Choreographic.Graded.Process
     Choreographic.Graded.Runtime.Concurrent
+    Control.Functor.Graded.Linear
+    Data.Functor.Graded.Linear
+    Data.Grade
     MyLib
 
   -- Modules included in this library but not exported.
@@ -68,6 +71,7 @@ library
     containers ^>=0.6.7,
     effect-monad,
     free,
+    linear-base,
     type-level-sets,
 
   -- Directories containing source files.

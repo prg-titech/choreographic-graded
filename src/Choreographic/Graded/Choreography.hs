@@ -9,9 +9,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# LANGUAGE LinearTypes #-}
 
-{-# HLINT ignore "Use newtype instead of data" #-}
 
 module Choreographic.Graded.Choreography where
 
@@ -26,7 +25,7 @@ import qualified Data.Type.Set as TS
   the behavior of a destributed system. It is parameterized by
   a set of endpoints and a type of actions.
 -}
-data Choreography (univ :: [] Symbol) (ps :: [] Symbol) a
+newtype Choreography (univ :: [] Symbol) (ps :: [] Symbol) a
   = Choreography
       ( forall.
         -- \| 簡単のためこれらのプロパティは常に満たすものとみなす。Choreography コンストラクタを直接使用しなければ問題ない。
