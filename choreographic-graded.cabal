@@ -51,14 +51,17 @@ library
     Choreographic.Graded
     Choreographic.Graded.AST
     Choreographic.Graded.Choreography
+    Choreographic.Graded.Faced
     Choreographic.Graded.Located
     Choreographic.Graded.Location
     Choreographic.Graded.Operation
-    Choreographic.Graded.Process
     Choreographic.Graded.Runtime.Concurrent
+    Control.Functor.Graded
     Control.Functor.Graded.Linear
+    Control.Functor.Graded.Unrestricted
+    Control.Functor.Unrestricted
+    Control.Monad.Free.Linear
     Data.Functor.Graded.Linear
-    Data.Grade
     MyLib
 
   -- Modules included in this library but not exported.
@@ -71,7 +74,9 @@ library
     containers ^>=0.6.7,
     effect-monad,
     free,
+    ghc-prim,
     linear-base,
+    reflection,
     type-level-sets,
 
   -- Directories containing source files.
@@ -92,6 +97,46 @@ executable choreographic-graded
   build-depends:
     base ^>=4.18.3.0,
     choreographic-graded,
+    containers,
+    type-level-sets,
+
+  -- Directories containing source files.
+  hs-source-dirs: app
+  -- Base language which the package is written in.
+  default-language: Haskell2010
+
+executable enclave-demo
+  -- Import common warning flags.
+  import: warnings
+  -- .hs or .lhs file containing the Main module.
+  main-is: Enclave.hs
+  -- LANGUAGE extensions used by modules in this package.
+  -- other-extensions:
+  -- Other library packages from which modules are imported.
+  build-depends:
+    base ^>=4.18.3.0,
+    choreographic-graded,
+    containers,
+    type-level-sets,
+
+  -- Directories containing source files.
+  hs-source-dirs: app
+  -- Base language which the package is written in.
+  default-language: Haskell2010
+
+executable auction-demo
+  -- Import common warning flags.
+  import: warnings
+  -- .hs or .lhs file containing the Main module.
+  main-is: Auction.hs
+  -- LANGUAGE extensions used by modules in this package.
+  -- other-extensions:
+  -- Other library packages from which modules are imported.
+  build-depends:
+    base ^>=4.18.3.0,
+    choreographic-graded,
+    containers,
+    type-level-sets,
 
   -- Directories containing source files.
   hs-source-dirs: app

@@ -1,28 +1,27 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE AllowAmbiguousTypes   #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 {-# HLINT ignore "Use newtype instead of data" #-}
 
 module Choreographic.Graded.AST where
 
-import Choreographic.Graded.Process (Process)
-import Data.Kind
-import Data.Proxy (Proxy (Proxy))
-import Data.Type.Bool (If)
-import qualified Data.Type.Map as TM
-import qualified Data.Type.Set as TS
-import GHC.TypeLits
+import           Data.Kind
+import           Data.Proxy     (Proxy (Proxy))
+import           Data.Type.Bool (If)
+import qualified Data.Type.Map  as TM
+import qualified Data.Type.Set  as TS
+import           GHC.TypeLits
 
 class Communicatable a where
   serialize :: a -> String
@@ -261,27 +260,27 @@ data
     (TM.Map contexts -> result) ->
     ValEvaluation contexts result
 
-data
-  CmpEvaluation
-    (contexts :: [] (TM.Mapping Symbol Type))
-    (result :: Type)
-  where
-  CmpEvaluation ::
-    forall contexts result.
-    (TM.IsMap contexts) =>
-    (TM.Map contexts -> Process result) ->
-    CmpEvaluation contexts result
+-- data
+--   CmpEvaluation
+--     (contexts :: [] (TM.Mapping Symbol Type))
+--     (result :: Type)
+--   where
+--   CmpEvaluation ::
+--     forall contexts result.
+--     (TM.IsMap contexts) =>
+--     (TM.Map contexts -> Process result) ->
+--     CmpEvaluation contexts result
 
-valEval ::
-  forall u contexts cefs result.
-  (EffectGrade u, CoeffectGrade u) =>
-  Val u contexts cefs result ->
-  ValEvaluation contexts result
-valEval = undefined
+-- valEval ::
+--   forall u contexts cefs result.
+--   (EffectGrade u, CoeffectGrade u) =>
+--   Val u contexts cefs result ->
+--   ValEvaluation contexts result
+-- valEval = undefined
 
-cmpEval ::
-  forall u contexts cefs result eff.
-  (EffectGrade u, CoeffectGrade u) =>
-  Cmp u contexts cefs result eff ->
-  CmpEvaluation contexts result
-cmpEval = undefined
+-- cmpEval ::
+--   forall u contexts cefs result eff.
+--   (EffectGrade u, CoeffectGrade u) =>
+--   Cmp u contexts cefs result eff ->
+--   CmpEvaluation contexts result
+-- cmpEval = undefined

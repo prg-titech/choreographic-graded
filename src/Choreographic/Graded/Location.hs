@@ -1,24 +1,26 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE AllowAmbiguousTypes       #-}
+{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE PolyKinds                 #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE UndecidableInstances      #-}
 
 module Choreographic.Graded.Location where
 
-import Data.Proxy (Proxy (Proxy))
-import Data.Type.Bool (If)
-import qualified Data.Type.Set as TS
-import GHC.Base (Symbol)
-import GHC.TypeLits (CmpSymbol, KnownSymbol, symbolVal)
+import           Data.Proxy     (Proxy (Proxy))
+import           Data.Type.Bool (If)
+import           Data.Type.Set  (AsSet)
+import qualified Data.Type.Set  as TS
+import           GHC.Base       (Symbol)
+import           GHC.TypeLits   (CmpSymbol, KnownSymbol, symbolVal,
+                                 withKnownSymbol, withSomeSSymbol)
 
 data SingletonSymbol (s :: Symbol) = (KnownSymbol s) => SingletonSymbol (Proxy s)
 
@@ -75,3 +77,10 @@ type family IsSubset (xs :: [k1]) (ys :: [k2]) :: Bool where
   IsSubset xs '[] = 'False
   IsSubset (x ': xs) ys =
     If (IsMember x ys) (IsSubset xs ys) 'False
+
+type family MapList (f :: k1 -> k2) (xs :: [k1]) :: [k2] where
+  MapList _ '[] = '[]
+  MapList f (x ': xs) = f x ': MapList f xs
+
+type family MapSet (f :: k1 -> k2) (xs :: [k1]) :: [k2] where
+  MapSet f xs = AsSet (MapList f xs)

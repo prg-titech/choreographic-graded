@@ -1,8 +1,54 @@
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE QualifiedDo       #-}
+{-# LANGUAGE TypeApplications  #-}
+
 module Main where
 
-import qualified MyLib (someFunc)
+import           Choreographic.Graded          (Choreography)
+import qualified Choreographic.Graded          as C
+import           Choreographic.Graded.Location ()
+import           Control.Functor.Graded        (GradedComonadApply (new))
+import qualified Control.Functor.Graded        as CFG
+import qualified Data.Map                      as Map
+import qualified Data.Type.Set                 as TS
+import           Prelude                       (Bool (..), IO, Int, Ord (..),
+                                                String, print, ($))
+
+type Univ = TS.AsSet '["a", "b"]
+
+type A = '["a"]
+
+type B = '["b"]
+
+-- a : Seller
+-- b : Buyer
+program :: Choreography Univ Univ Bool
+program = CFG.sub $ CFG.do
+  let
+    bName :: C.Located Univ B String
+    bName = new "Hello"
+
+    bBudget :: C.Located Univ B Int
+    bBudget = new 100
+
+    aPriceDict :: C.Located Univ A (String -> Int)
+    aPriceDict = new $ \case
+          "Hello" -> 0
+          _       -> 10000000
+
+  name <- C.comm @"b" bName
+  let
+    aPrice :: C.Located Univ A Int
+    aPrice = aPriceDict CFG.<@> name
+  price <- C.comm @"a" aPrice
+  let
+    bIsBuy :: C.Located Univ B Bool
+    bIsBuy = (>) CFG.<$> bBudget CFG.<@> price
+  C.comm @"b" bIsBuy
 
 main :: IO ()
 main = do
-  putStrLn "Hello, Haskell!"
-  MyLib.someFunc
+  finalMap <- C.runChoreographyConcurrent @Univ program
+  print (Map.lookup "a" finalMap)

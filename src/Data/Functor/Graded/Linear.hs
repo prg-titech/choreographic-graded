@@ -1,40 +1,67 @@
-{-# LANGUAGE LinearTypes #-}
-{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE LinearTypes         #-}
+{-# LANGUAGE NoImplicitPrelude   #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Data.Functor.Graded.Linear where
 
-import GHC.Base (Type)
-import Prelude.Linear ( uncurry, ($) )
-import qualified Data.Grade as G
+import           GHC.Base       (Constraint, Type)
+import           Prelude.Linear (uncurry, ($))
 
 class GradedFunctor f where
-  fmap :: (a %1 -> b) -> f x a %1 -> f x b
+  gmap :: (a %1 -> b) -> f x a %1 -> f x b
+
+infixl 4 ^>$<
+
+(^>$<) :: (GradedFunctor f) => (a %1 -> b) -> f x a %1 -> f x b
+(^>$<) = gmap
 
 class (GradedFunctor f) => GradedComonad (f :: g -> Type -> Type) where
-  extract :: f x a %1 -> a
-  duplicate :: f x a %1 -> f (G.Mul g x x) (f x a)
+  type ComonadOne f :: g
+  type ComonadMul f (x :: g) (y :: g) :: g
+
+  gExtract :: f (ComonadOne f) a %1 -> a
+  gDuplicate :: f (ComonadMul f x y) a %1 -> f x (f y a)
 
 class (GradedFunctor f) => GradedSubComonad (f :: g -> Type -> Type) where
-  sub :: G.Sub g x y => f y a %1 -> f x a
+  type ComonadSub f (x :: g) (y :: g) :: Constraint
+
+  gSub :: (ComonadSub f x y) => f y a %1 -> f x a
 
 class (GradedComonad f) => GradedCtxComonad (f :: g -> Type -> Type) where
-  ignore :: f (G.Zero g) a %1 -> ()
-  split :: f (G.Add g x y) a %1 -> (f x a, f y a)
+  type ComonadZero f :: g
+  type ComonadAdd f (x :: g) (y :: g) :: g
 
-class (GradedFunctor f) => GradedZipComonad (f :: g -> Type -> Type) where
-  zips :: (f x a, f x b) %1 -> f x (a, b)
-  gen :: f x ()
+  gIgnore :: f (ComonadZero f) a %1 -> ()
+  gSplit :: f (ComonadAdd f x y) a %1 -> (f x a, f y a)
 
-class (GradedComonad f, GradedSubComonad f, GradedCtxComonad f, GradedZipComonad f) => Coffect f
+infixl 4 ^-<=
 
-gened :: (GradedZipComonad f) => a -> f x a
-gened a = fmap (\() -> a) gen
+(^-<=) :: (GradedCtxComonad f) => f (ComonadAdd f x y) a %1 -> ((f x a, f y a) %1 -> b) %1 -> b
+x ^-<= f = f $ gSplit x
+class (GradedFunctor f) => GradedApply (f :: g -> Type -> Type) where
+  gZip :: (f x a, f x b) %1 -> f x (a, b)
+  gUnit :: f x ()
 
-map2 :: (GradedZipComonad f) => (a %1 -> b %1 -> c) -> f x a %1 -> f x b %1 -> f x c
-map2 f x y = fmap (uncurry f) $ zips (x, y)
+gPure :: (GradedApply f) => a -> f x a
+gPure a = gmap (\() -> a) gUnit
 
-splitThen :: (GradedCtxComonad f) => f (G.Add g x y) a %1 -> ((f x a, f y a) %1 -> b) %1 -> b
-splitThen x f = f $ split x
+gMap2 :: (GradedApply f) => (a %1 -> b %1 -> c) -> f x a %1 -> f x b %1 -> f x c
+gMap2 f x y = gmap (uncurry f) $ gZip (x, y)
+
+gApply :: (GradedApply f) => f x (a %1 -> b) %1 -> f x a %1 -> f x b
+gApply ff fx = gmap (\(f, x) -> f x) $ gZip (ff, fx)
+
+infixl 4 ^>*<
+
+(^>*<) :: (GradedApply f) => f x (a %1 -> b) %1 -> f x a %1 -> f x b
+(^>*<) = gApply
+
+class
+  ( GradedComonad f
+  , GradedSubComonad f
+  , GradedCtxComonad f
+  , GradedApply f
+  ) =>
+  Coeffect f
