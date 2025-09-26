@@ -4,6 +4,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Choreographic.Graded.Runtime.Concurrent where
 
@@ -11,13 +12,13 @@ import           Choreographic.Graded.Choreography (Choreography, CommInfo (..),
                                                     Communicatable (..),
                                                     ProcessOp (..),
                                                     runChoreography)
-import           Choreographic.Graded.Location     (AllKnownSymbols (allKnownSymbols))
+import           Choreographic.Graded.Location     (AllKnownSymbols,
+                                                    allKnownSymbols)
 import           Control.Concurrent                (forkIO)
 import qualified Control.Concurrent.MVar           as MVar
 import           Control.Monad                     (forM_)
 import           Control.Monad.Free                (foldFree)
 import           Data.Map                          as Map
-import           Data.Proxy                        (Proxy (..))
 import           Data.Type.Set                     (IsSet)
 
 -- | Hooks for logging send/receive events
@@ -51,9 +52,7 @@ handleProcess hooks stores op = case op of
     serializedValue <- MVar.takeMVar store
     onReceive hooks (ciFrom info) (ciTo info) serializedValue
     pure (cont (deserialize serializedValue))
-  PerformIO ioAction cont -> do
-    result <- ioAction
-    pure (cont result)
+  PerformIO ioAction cont -> cont <$> ioAction
 
 runChoreographyConcurrentWithHooks ::
   forall univ a.
@@ -63,7 +62,7 @@ runChoreographyConcurrentWithHooks ::
   IO (Map.Map String a) -- 全部同じになることが期待される
 runChoreographyConcurrentWithHooks hooks choreo = do
   let
-    allSyms = allKnownSymbols (Proxy :: Proxy univ)
+    allSyms = allKnownSymbols @univ
   stores <- Map.fromList
     <$> traverse (\sym -> (sym,) <$> MVar.newEmptyMVar)
     [CommInfo { ciTo = sym, ciFrom = sym'} | sym <- allSyms, sym' <- allSyms]
