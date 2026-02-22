@@ -13,7 +13,6 @@ class GradedFunctor f where
 (<$>) :: (GradedFunctor f) => (a -> b) -> f x a -> f x b
 (<$>) = fmap
 
-
 (<@>) :: (GradedFunctor f) => f x (a -> b) -> a -> f x b
 (<@>) fxf a = (\f -> f a) <$> fxf
 

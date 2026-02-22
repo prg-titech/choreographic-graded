@@ -72,7 +72,7 @@ performIO io = liftF (PerformIO io id)
 newtype Choreography (univ :: [Symbol]) (ps :: [Symbol]) a
   = Choreography
       (   -- \| 簡単のためこれらのプロパティは常に満たすものとみなす。Choreography コンストラクタを直接使用しなければ問題ない。
-          -- \| 使えるのは Effect / Coeffect インスタンスから導出されるされるされる関数、comm および enclave
+          -- \| 使えるのは Effect / Coeffect インスタンスから導出されるされるされる関数、comm および conclave
           -- (IsSubset ps ps' ~ True, IsSubset ps' univ ~ True, IsMember p ps' ~ True) =>
           [] String -> -- Univ
           String -> -- p

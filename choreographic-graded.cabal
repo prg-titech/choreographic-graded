@@ -51,7 +51,7 @@ library
     Choreographic.Graded
     Choreographic.Graded.AST
     Choreographic.Graded.Choreography
-    Choreographic.Graded.Faced
+    Choreographic.Graded.Faceted
     Choreographic.Graded.Located
     Choreographic.Graded.Location
     Choreographic.Graded.Operation
@@ -105,11 +105,11 @@ executable choreographic-graded
   -- Base language which the package is written in.
   default-language: Haskell2010
 
-executable enclave-demo
+executable conclave-demo
   -- Import common warning flags.
   import: warnings
   -- .hs or .lhs file containing the Main module.
-  main-is: Enclave.hs
+  main-is: Conclave.hs
   -- LANGUAGE extensions used by modules in this package.
   -- other-extensions:
   -- Other library packages from which modules are imported.

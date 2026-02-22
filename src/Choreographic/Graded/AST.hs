@@ -126,7 +126,7 @@ data
       (cefs1 `TM.Union` DeleteMapByKey x cefs2)
       b
       (MultEffect u p1 p2)
-  Enclave ::
+  Conclave ::
     forall u ctxs1 cefs1 ctxs2 cefs2 a p1 b p2 x p3 pTarget.
     ( CoeffectGrade u
     , EffectGrade u

@@ -1,0 +1,697 @@
+\section{実装}
+
+本節では、$\calc$ の Haskell による実装の概要を述べる。まず、大まかな概観を述べ (セクション~\ref{sect:impl-concept})、次に $\calc$ の概念の実装において特筆すべき事項をいくつか述べる (セクション~\ref{sect:impl-eff-coeff}、~\ref{sect:impl-proc-choro}、~\ref{sect:impl-runtime})。最後に、ライブラリの用例 (セクション ~\ref{sect:impl-example}) とその制限 (セクション~\ref{sect:impl-limitation})を述べる。
+
+実装したライブラリ \texttt{choreographic-graded} は、3つの主要なアイデアを統合している：
+\begin{enumerate}
+\item \textbf{段階付き型システム}：計算効果と資源使用量を型レベルで追跡
+\item \textbf{コレオグラフィックプログラミング}：分散システムの高レベル記述から自動的なエンドポイント投影
+\item \textbf{線形型}：資源の正確な管理と副作用制御
+\end{enumerate}
+
+これらにより、分散システムプロトコルの正確性と資源使用量の両方を、コンパイル時に検証可能なシステムを実現している。
+
+\subsection{概観}
+\label{sect:impl-concept}
+
+choreographic-graded ライブラリは、段階付き型システムを持つコレオグラフィックプログラミングの Haskell による実装である。本実装は以下の階層構造をとる：
+
+\subsubsection{システム全体の構成}
+
+\begin{enumerate}
+\item \textbf{Graded Type System Layer} (\texttt{src/Control/Functor/Graded/}, \texttt{src/Data/Functor/Graded/})：
+  \begin{itemize}
+  \item 段階付きファンクタとモナドの基盤
+  \item エフェクトとコエフェクトの型クラス定義
+  \item 線形型とUnrestricted型の両対応
+  \end{itemize}
+
+\item \textbf{Choreographic Programming Layer} (\texttt{src/Choreographic/Graded/})：
+  \begin{itemize}
+  \item コレオグラフィーの定義と実行基盤
+  \item Located値とFaceted値による位置情報管理
+  \item 通信プリミティブとエンクレーブ操作
+  \item 抽象構文木（AST）による内部表現
+  \end{itemize}
+
+\item \textbf{Runtime Execution Layer} (\texttt{src/Choreographic/Graded/Runtime/})：
+  \begin{itemize}
+  \item 並行実行エンジン
+  \item メッセージパッシング基盤
+  \item エラーハンドリングと通信ロギング
+  \end{itemize}
+\end{enumerate}
+
+\subsubsection{型システムの高度な機能}
+
+実装では Haskell の最先端の型システム機能を多用している：
+
+\begin{itemize}
+\item \texttt{DataKinds}：型レベルでの値の操作（ロケーション名、段階情報）
+\item \texttt{TypeFamilies}：型レベル関数による段階合成と集合操作
+\item \texttt{GADTs}：段階付き型の正確な制約表現
+\item \texttt{RankNTypes}：高階多相型による汎用的なコレオグラフィー記述
+\item \texttt{TypeApplications}：明示的な型適用による曖昧性解消
+\item \texttt{UndecidableInstances}：複雑な型族計算の許可
+\item \texttt{PolyKinds}：種多相による汎用的な段階システム
+\end{itemize}
+
+\subsubsection{モジュール間の依存関係}
+
+ライブラリの依存関係は以下の通りである：
+\begin{itemize}
+\item \texttt{free}：Free モナドによる DSL 構築
+\item \texttt{linear-base}：線形型による資源管理
+\item \texttt{type-level-sets}：型レベル集合操作
+\item \texttt{effect-monad}：エフェクトシステム基盤
+\item \texttt{containers}：実行時データ構造
+\item \texttt{reflection}：型レベル情報の実行時利用
+\end{itemize}
+
+\subsection{エフェクトとコエフェクト}
+\label{sect:impl-eff-coeff}
+
+エフェクトとコエフェクトのシステムは、本実装の理論的基盤を成している。このシステムにより、計算の副作用と資源消費パターンを型レベルで追跡・制御する。
+
+\subsubsection{段階付きモナド（エフェクト）}
+
+\texttt{Control.Functor.Graded} モジュールにおいて、段階付きファンクタとモナドの基盤を提供する：
+
+\begin{verbatim}
+class GradedFunctor f where
+  fmap :: (a -> b) -> f x a -> f x b
+
+class (GradedFunctor f) => GradedMonad f where
+  type GMOne f :: g              -- 単位段階
+  type GMMul f (x :: g) (y :: g) :: g  -- 段階合成
+  return :: a -> f (GMOne f) a
+  (>>=) :: f x a -> (a -> f y b) -> f (GMMul f x y) b
+\end{verbatim}
+
+段階付きモナドでは、計算の各ステップが段階情報 \texttt{x}, \texttt{y} を持ち、bind 操作により段階が合成される（\texttt{GMMul f x y}）。これにより、計算全体での副作用累積を型レベルで追跡できる。
+
+\texttt{SubGradable} 型クラスは段階の包含関係を定義し、より制限的な段階から緩い段階への変換を許可する：
+
+\begin{verbatim}
+class GradedFunctor f => SubGradable f where
+  type Sub f (x :: g) (y :: g) :: Constraint
+  sub :: (Sub f x y) => f x a -> f y a
+\end{verbatim}
+
+Effect 型クラスは、これらの組み合わせとして定義される：
+\begin{verbatim}
+class (GradedMonad f, SubGradable f) => Effect f
+\end{verbatim}
+
+\subsubsection{段階付きコモナド（コエフェクト）}
+
+双対的に、コエフェクトシステムは資源の要求パターンを表現する。\texttt{Data.Functor.Graded.Linear} では、線形型を用いた資源管理を実現：
+
+\begin{verbatim}
+class GradedComonad f where
+  type ComonadOne f :: g
+  type ComonadMul f (x :: g) (y :: g) :: g
+  gExtract :: f (ComonadOne f) a %1 -> a
+  gDuplicate :: f (ComonadMul f x y) a %1 -> f x (f y a)
+\end{verbatim}
+
+線形型表記（\texttt{\%1}）により、資源が正確に一度消費されることを保証する。
+
+\texttt{GradedCtxComonad} では、文脈的な資源操作を提供：
+\begin{verbatim}
+class GradedCtxComonad f where
+  type ComonadZero f :: g      -- 空資源
+  type ComonadAdd f (x :: g) (y :: g) :: g  -- 資源合成
+  gIgnore :: f (ComonadZero f) a %1 -> ()
+  gSplit :: f (ComonadAdd f x y) a %1 -> (f x a, f y a)
+\end{verbatim}
+
+Coeffect 型クラスは、これらの組み合わせとして定義される：
+\begin{verbatim}
+class (GradedComonad f, GradedSubComonad f,
+       GradedCtxComonad f, GradedApply f) => Coeffect f
+\end{verbatim}
+
+\subsubsection{コレオグラフィーでの段階付き型の活用}
+
+コレオグラフィーでは、段階情報がロケーション集合として使用される。Located 型は Coeffect インスタンスを持ち、複数ロケーションでの値の可用性を表現：
+
+\begin{verbatim}
+instance CFG.Coeffect (Located univ)
+instance CFG.GradedComonad (Located univ) where
+  type GWOne (Located univ) = univ  -- 全ロケーション
+  type GWMul (Located univ) x y = x `Intersect` y  -- 積集合
+\end{verbatim}
+
+一方、Choreography 型は Effect インスタンスを持ち、必要なロケーション集合を段階として追跡：
+
+\begin{verbatim}
+instance CFG.Effect (Choreography univ)
+instance CFG.GradedMonad (Choreography univ) where
+  type GMOne (Choreography univ) = '[]     -- 空集合
+  type GMMul (Choreography univ) x y = x `Union` y  -- 和集合
+\end{verbatim}
+
+この設計により、コレオグラフィーの各ステップで必要なロケーション集合が型レベルで自動的に推論・検証される。
+
+\subsection{プロセスとコレオグラフィ}
+\label{sect:impl-proc-choro}
+
+コレオグラフィーシステムは、分散システムの高レベル記述を可能にし、自動的にローカルプロセスへの投影を行う。このシステムの設計は、理論的な堅牢性と実用性を両立している。
+
+\subsubsection{コレオグラフィーの基本構造}
+
+\texttt{Choreographic.Graded.Choreography} モジュールにおいて、コレオグラフィーは以下のように定義される：
+
+\begin{verbatim}
+newtype Choreography (univ :: [Symbol]) (ps :: [Symbol]) a
+  = Choreography ([] String -> String -> Process a)
+\end{verbatim}
+
+型パラメータは以下の意味を持つ：
+\begin{itemize}
+\item \texttt{univ}：システム全体のロケーション集合（宇宙集合）
+\item \texttt{ps}：現在のコレオグラフィーで有効なロケーション集合
+\item \texttt{a}：コレオグラフィーの結果型
+\end{itemize}
+
+内部表現では、全ロケーション名のリスト（\texttt{[] String}）と現在のロケーション名（\texttt{String}）を受け取り、そのロケーションでのローカルプロセス（\texttt{Process a}）を生成する関数となっている。
+
+\subsubsection{プロセスの定義}
+
+Process は Free モナドを用いて定義され、通信操作を DSL として記述できる：
+
+\begin{verbatim}
+data ProcessOp a where
+  -- メッセージ送信
+  Send :: (Communicatable b) => CommInfo -> b -> a -> ProcessOp a
+  -- メッセージ受信
+  Receive :: (Communicatable b) => CommInfo -> (b -> a) -> ProcessOp a
+  -- IO操作実行
+  PerformIO :: IO a -> (a -> b) -> ProcessOp b
+
+type Process a = Free ProcessOp a
+\end{verbatim}
+
+\texttt{CommInfo} は通信の詳細情報を保持する：
+\begin{verbatim}
+data CommInfo = CommInfo
+  { ciFrom :: String  -- 送信元ロケーション
+  , ciTo   :: String  -- 送信先ロケーション
+  }
+\end{verbatim}
+
+\subsubsection{値の位置情報管理}
+
+コレオグラフィーでは、値がどのロケーションに存在するかを型レベルで管理する。二つの主要な型がある：
+
+\paragraph{Located 値}
+\texttt{Located} 型は、全指定ロケーションで共通の値を表現する：
+
+\begin{verbatim}
+data Located (univ :: [] Symbol) (ps :: [] Symbol) a
+  = Located a      -- 値が存在
+  | Unlocated      -- 値が存在しない
+\end{verbatim}
+
+\texttt{Located univ ps a} は、「ロケーション集合 \texttt{ps} の全てで、同じ値 \texttt{a} を持つ」ことを意味する。例えば、\texttt{Located Univ '["a", "b"] Int} は、ロケーション "a" と "b" の両方で同じ \texttt{Int} 値を持つことを表現する。
+
+\paragraph{Faceted 値}
+\texttt{Faceted} 型は、各ロケーションで異なる可能性のある値を表現する：
+
+\begin{verbatim}
+data Faceted (univ :: [Symbol]) (ps :: [Symbol]) a
+  = Faceted a        -- ロケーション固有の値
+  | Unfaced        -- 値なし
+\end{verbatim}
+
+\texttt{Faceted univ ps a} は、「ロケーション集合 \texttt{ps} の各ロケーションで、（潜在的に）異なる値 \texttt{a} を持つ」ことを意味する。これにより、ロケーション固有の状態やIO操作の結果を扱える。
+
+\subsubsection{段階付き型インスタンス}
+
+Choreography 型は段階付きモナド（Effect）のインスタンスとなる：
+
+\begin{verbatim}
+instance CFG.GradedMonad (Choreography univ) where
+  type GMOne (Choreography univ) = '[]  -- 空ロケーション集合
+  type GMMul (Choreography univ) x y = x `Union` y  -- 和集合
+
+  return a = Choreography $ \_ _ -> pure a
+  (>>=) (Choreography mkProcessA) cont =
+    Choreography $ \univ p -> do
+      a <- mkProcessA univ p
+      runChoreography univ p (cont a)
+\end{verbatim}
+
+段階の合成が和集合（\texttt{Union}）として定義されることで、複数のコレオグラフィーを組み合わせた際に、必要なロケーション集合が自動的に統合される。
+
+\texttt{SubGradable} インスタンスにより、より大きなロケーション集合への昇格が可能：
+\begin{verbatim}
+instance CFG.SubGradable (Choreography univ) where
+  type Sub (Choreography univ) x y = IsSubset x y ~ 'True
+  sub (Choreography mkProcess) = Choreography mkProcess
+\end{verbatim}
+
+これにより、少数のロケーションでのコレオグラフィーを、より多数のロケーションを持つコンテキストで使用できる。
+
+\subsection{ランタイム}
+\label{sect:impl-runtime}
+
+ランタイムシステムは、理論的なコレオグラフィー記述を実際の分散実行に変換する重要な役割を担う。\texttt{Choreographic.Graded.Runtime.Concurrent} モジュールにおいて、並行実行基盤を提供している。
+
+\subsubsection{並行実行アーキテクチャ}
+
+実行時システムは以下のアプローチを取る：
+\begin{enumerate}
+\item \textbf{プロセス投影}：単一のコレオグラフィーから各ロケーションのローカルプロセスを生成
+\item \textbf{並行実行}：各ロケーションのプロセスを独立したスレッドで実行
+\item \textbf{メッセージパッシング}：MVar を用いた型安全な通信チャネル
+\item \textbf{同期実行}：全ロケーションの完了を待機し、結果を収集
+\end{enumerate}
+
+\subsubsection{メイン実行関数}
+
+コアとなる実行関数は以下のように定義される：
+
+\begin{verbatim}
+runChoreographyConcurrent ::
+  forall (univ :: [Symbol]) a.
+  (IsSet univ, Communicatable a, AllKnownSymbols univ) =>
+  Choreography univ univ a ->
+  IO (Map.Map String a)
+\end{verbatim}
+
+型制約の意味：
+\begin{itemize}
+\item \texttt{IsSet univ}：\texttt{univ} が有効な集合であること
+\item \texttt{Communicatable a}：結果型 \texttt{a} がシリアライズ可能であること
+\item \texttt{AllKnownSymbols univ}：全ロケーション名が実行時に取得可能であること
+\end{itemize}
+
+戻り値の \texttt{Map.Map String a} は、各ロケーション名を実行結果にマップする辞書である。
+
+\subsubsection{通信基盤の実装}
+
+メッセージパッシングは MVar (Mutable Variable) を用いて実装される：
+
+\begin{verbatim}
+handleProcess ::
+  CommunicationHooks ->
+  Map.Map CommInfo (MVar.MVar String) ->
+  ProcessOp a ->
+  IO a
+handleProcess hooks stores op = case op of
+  Send info x cont -> do
+    let serializedValue = serialize x
+    Just store <- pure $ stores Map.!? info
+    onSend hooks (ciFrom info) (ciTo info) serializedValue
+    MVar.putMVar store serializedValue
+    pure cont
+  Receive info cont -> do
+    Just store <- pure $ stores Map.!? info
+    serializedValue <- MVar.takeMVar store
+    onReceive hooks (ciFrom info) (ciTo info) serializedValue
+    pure (cont (deserialize serializedValue))
+  PerformIO ioAction cont -> do
+    result <- ioAction
+    pure (cont result)
+\end{verbatim}
+
+各通信チャネルは \texttt{CommInfo} をキーとして \texttt{Map} で管理され、対応する \texttt{MVar String} にメッセージが格納される。
+
+\subsubsection{通信ロギングとデバッグ}
+
+実装では \texttt{CommunicationHooks} により、通信イベントのロギングとデバッグを支援：
+
+\begin{verbatim}
+data CommunicationHooks = CommunicationHooks
+  { onSend    :: String -> String -> String -> IO ()
+  , onReceive :: String -> String -> String -> IO ()
+  }
+\end{verbatim}
+
+これにより、分散実行中のメッセージフローを可視化し、デバッグを容易にしている。
+
+\subsubsection{実行プロセス}
+
+実際の実行は以下の手順で行われる：
+
+\begin{enumerate}
+\item \textbf{チャネル初期化}：全ロケーション間の通信チャネル（\texttt{MVar}）を作成
+\item \textbf{プロセス起動}：各ロケーションに対してスレッドを \texttt{forkIO} で生成
+\item \textbf{投影実行}：\texttt{runChoreography} により各ロケーションのローカルプロセスを実行
+\item \textbf{Free モナド解釈}：\texttt{foldFree} により ProcessOp を IO 操作に変換
+\item \textbf{結果収集}：全スレッドの完了を待ち、結果を \texttt{Map} に収集
+\end{enumerate}
+
+\begin{verbatim}
+runChoreographyConcurrentWithHooks hooks choreo = do
+  let allSyms = allKnownSymbols (Proxy :: Proxy univ)
+  stores <- Map.fromList <$> traverse (\sym -> (sym,) <$> MVar.newEmptyMVar)
+    [CommInfo { ciTo = sym, ciFrom = sym'} | sym <- allSyms, sym' <- allSyms]
+  resultVar <- Map.fromList <$> traverse (\sym -> (sym,) <$> MVar.newEmptyMVar) allSyms
+  forM_ allSyms \sym -> do
+    forkIO do
+      let process = runChoreography allSyms sym choreo
+      result <- foldFree (handleProcess hooks stores) process
+      Just store <- pure $ resultVar Map.!? sym
+      MVar.putMVar store (serialize result)
+  results <- traverse MVar.takeMVar resultVar
+  pure $ fmap deserialize results
+\end{verbatim}
+
+この実装により、型安全でデッドロックフリーな分散実行が保証される。
+
+\subsection{用例}
+\label{sect:impl-example}
+
+実装されたライブラリの用例として、3つの代表的なアプリケーションを示す。これらは、コレオグラフィックプログラミングの異なる側面を実証している。
+
+\subsubsection{基本的な通信プロトコル：Buyer-Seller}
+
+最も基本的な例として、buyer-seller プロトコルを示す（\texttt{app/Main.hs}）：
+
+\begin{verbatim}
+type Univ = TS.AsSet '["a", "b"]  -- a: Seller, b: Buyer
+type A = '["a"]
+type B = '["b"]
+
+program :: Choreography Univ Univ Bool
+program = CFG.sub $ CFG.do
+  let
+    bName :: C.Located Univ B String
+    bName = new "Hello"
+
+    bBudget :: C.Located Univ B Int
+    bBudget = new 100
+
+    aPriceDict :: C.Located Univ A (String -> Int)
+    aPriceDict = new $ \case
+      "Hello" -> 0
+      _       -> 10000000
+
+  -- フェーズ1：Buyerが商品名を送信
+  name <- C.comm @"b" bName
+
+  let
+    -- Sellerが価格を計算
+    aPrice :: C.Located Univ A Int
+    aPrice = aPriceDict CFG.<@> name
+
+  -- フェーズ2：Sellerが価格を送信
+  price <- C.comm @"a" aPrice
+
+  let
+    -- Buyerが購入判断
+    bIsBuy :: C.Located Univ B Bool
+    bIsBuy = (>) CFG.<$> bBudget CFG.<@> price
+
+  -- フェーズ3：Buyerが最終決定を送信
+  C.comm @"b" bIsBuy
+\end{verbatim}
+
+この例では、以下の特徴が示される：
+\begin{itemize}
+\item \textbf{型レベル通信}：\texttt{@"b"}, \texttt{@"a"} による明示的なロケーション指定
+\item \textbf{Located値の操作}：\texttt{CFG.<@>}, \texttt{CFG.<\$>} による関数適用
+\item \textbf{段階推論}：\texttt{CFG.sub} による段階調整
+\item \textbf{自動投影}：単一の記述から両ロケーションのプロセスが生成
+\end{itemize}
+
+実行時、このコレオグラフィーは以下のローカルプロセスに投影される：
+\begin{itemize}
+\item \textbf{Buyer ("b") プロセス}：名前送信 → 価格受信 → 判断計算 → 結果送信
+\item \textbf{Seller ("a") プロセス}：名前受信 → 価格計算 → 価格送信 → 結果受信
+\end{itemize}
+
+\subsubsection{セキュリティ隔離：Conclave デモ}
+
+より高度な例として、conclave による部分的隔離実行を示す（\texttt{app/Conclave.hs}）：
+
+\begin{verbatim}
+type Univ = TS.AsSet '["a", "b", "c"]
+type ConclaveAB = TS.AsSet '["a", "b"]  -- a, b のみの隔離環境
+
+-- Conclave 内部のコレオグラフィー（a, b のみ参加）
+innerChoreography :: Choreography Univ ConclaveAB Int
+innerChoreography = CFG.sub $ CFG.do
+  let
+    aSecret :: C.Located Univ A Int
+    aSecret = new 42  -- a の秘密値
+
+    bMultiplier :: C.Located Univ B Int
+    bMultiplier = new 3  -- b の乗数
+
+  -- 秘密値を a から b に送信（c は参加しない）
+  secret <- C.comm @"a" aSecret
+
+  let
+    bResult :: C.Located Univ B Int
+    bResult = (*) CFG.<\$> bMultiplier CFG.<@> secret
+
+  -- 計算結果を b から a に返送
+  C.comm @"b" bResult
+
+-- メインプログラム（全ロケーション参加）
+program :: Choreography Univ Univ Int
+program = CFG.sub $ CFG.do
+  let
+    locatedInnerChor :: C.Located Univ ConclaveAB
+                        (Choreography Univ ConclaveAB Int)
+    locatedInnerChor = new innerChoreography
+
+  -- Conclave 実行（a, b のみで秘密計算）
+  conclaveResult <- C.conclave locatedInnerChor
+
+  let
+    cAdder :: C.Located Univ C Int
+    cAdder = new 10
+
+  -- Conclave結果を全体に公開
+  result <- C.comm @"a" conclaveResult
+
+  let
+    cFinalResult :: C.Located Univ C Int
+    cFinalResult = (+) CFG.<\$> cAdder CFG.<@> result
+
+  -- 最終結果を c から全体に送信
+  C.comm @"c" cFinalResult
+\end{verbatim}
+
+この例では、以下のセキュリティ特性が実現される：
+\begin{itemize}
+\item \textbf{情報隔離}：秘密値 42 は c に露出されない
+\item \textbf{部分実行}：conclave 内は a, b のみが参加
+\item \textbf{段階的公開}：計算結果のみが全体に共有される
+\item \textbf{型安全性}：コンパイル時に隔離違反が検出される
+\end{itemize}
+
+\subsubsection{ローカルIO統合：オークションシステム}
+
+実際のアプリケーションに近い例として、オークションシステムを示す（\texttt{app/Auction.hs}）：
+
+\begin{verbatim}
+type Univ = TS.AsSet '["auctioneer", "bidder1", "bidder2", "bidder3"]
+type Bidders = TS.AsSet '["bidder1", "bidder2", "bidder3"]
+
+-- ローカル入札入力
+getBidInput :: String -> IO Int
+getBidInput itemName = do
+  putStrLn $ "=== AUCTION: " ++ itemName ++ " ==="
+  putStrLn "Enter your bid amount (0 to pass): "
+  bidStr <- getLine
+  return (read bidStr)
+
+auctionProgram :: Choreography Univ Univ AuctionResult
+auctionProgram = CFG.sub $ CFG.do
+  let
+    bidder1Input :: C.Located Univ Bidder1 AuctionItem
+    bidder1Input = new $ AuctionItem "Vintage Guitar" "1959 Gibson" 5000
+
+  -- フェーズ1：各 bidder でローカル入力
+  bidAmount1 <- C.local @Univ @Univ @AuctionItem @"bidder1"
+                  bidder1Input (getBidInput . itemName)
+  bidAmount2 <- C.local @Univ @Univ @AuctionItem @"bidder2"
+                  bidder2Input (getBidInput . itemName)
+  bidAmount3 <- C.local @Univ @Univ @AuctionItem @"bidder3"
+                  bidder3Input (getBidInput . itemName)
+
+  -- フェーズ2：入札額を全体に送信
+  amount1 <- C.comm @"bidder1" bidAmount1
+  amount2 <- C.comm @"bidder2" bidAmount2
+  amount3 <- C.comm @"bidder3" bidAmount3
+
+  -- フェーズ3：auctioneer が結果を評価・発表
+  let
+    bids = [Bid "bidder1" amount1, Bid "bidder2" amount2,
+            Bid "bidder3" amount3]
+    result :: C.Located Univ Auctioneer AuctionResult
+    result = new $ evaluateBids bids
+
+  C.comm @"auctioneer" result
+\end{verbatim}
+
+この例では、以下の実用的機能が示される：
+\begin{itemize}
+\item \textbf{ローカルIO}：\texttt{C.local} による各ロケーションでの入力処理
+\item \textbf{複数参加者}：4つのロケーションによる協調プロトコル
+\item \textbf{非同期処理}：各 bidder の独立した入力と同期的な結果共有
+\item \textbf{実用データ型}：カスタムデータ型（\texttt{AuctionItem}, \texttt{Bid}）の使用
+\end{itemize}
+
+\subsubsection{実行結果とデバッグ}
+
+全ての例において、\texttt{CommunicationHooks} により通信ログを出力し、分散実行の可視化を行っている：
+
+\begin{verbatim}
+let hooks = CommunicationHooks
+      { onSend = \from to value ->
+          putStrLn $ "[SEND] " ++ from ++ " -> " ++ to ++ " | " ++ value
+      , onReceive = \from to value ->
+          putStrLn $ "[RECV] " ++ from ++ " -> " ++ to ++ " | " ++ value
+      }
+finalResult <- C.runChoreographyConcurrentWithHooks hooks program
+\end{verbatim}
+
+これにより、開発者は分散プロトコルの実際の動作を詳細に観察できる。
+
+\subsection{制限}
+\label{sect:impl-limitation}
+
+現在の実装は研究プロトタイプとしての性質を持ち、実用的な分散システムへの適用にはいくつかの制限が存在する。以下、主要な制限事項を詳述する。
+
+\subsubsection{型システムの複雑性}
+
+\paragraph{型エラーメッセージの難解さ}
+高度な型レベルプログラミングにより、型エラーメッセージが非常に理解困難になる：
+
+\begin{verbatim}
+-- 典型的なエラーメッセージの例
+Couldn't match type 'TS.Union '["a"] '["b"]' with '["a", "b"]'
+  Expected type: Choreography Univ '["a", "b"] Int
+    Actual type: Choreography Univ (TS.Union '["a"] '["b"]) Int
+\end{verbatim}
+
+型族の計算結果と期待される型の不一致が、複雑な型表現として現れ、デバッグを困難にしている。
+
+\paragraph{段階推論の手動性}
+Effect/Coeffect の段階推論が完全に自動化されていない：
+
+\begin{verbatim}
+-- 明示的な CFG.sub が頻繁に必要
+program = CFG.sub $ CFG.do  -- <- 手動で段階調整
+  x <- someOperation
+  y <- CFG.sub $ anotherOperation  -- <- 再度手動調整
+  return y
+\end{verbatim}
+
+理想的には、型推論により段階の包含関係が自動的に解決されるべきである。
+
+\subsubsection{実行時性能の問題}
+
+\paragraph{Free モナドのオーバーヘッド}
+DSL の実装に Free モナドを使用しているため、以下の性能問題がある：
+\begin{itemize}
+\item メモリ使用量：AST の構築と保持によるヒープ圧迫
+\item 実行速度：\texttt{foldFree} による解釈実行のオーバーヘッド
+\item GC圧迫：大量の中間データ構造の生成と破棄
+\end{itemize}
+
+\paragraph{型レベル計算のコンパイル時コスト}
+複雑な型族計算により、コンパイル時間が大幅に増加する場合がある。特に：
+\begin{itemize}
+\item 型レベル集合操作（\texttt{Union}, \texttt{Intersect}）の計算
+\item 段階の包含関係チェック（\texttt{IsSubset}）
+\item 制約ソルバーの実行時間
+\end{itemize}
+
+\subsubsection{分散実行の制限}
+
+\paragraph{単一マシン内実行}
+現在の実装は真のネットワーク分散をサポートしていない：
+\begin{itemize}
+\item 通信は MVar による単一プロセス内の並行実行
+\item ネットワークプロトコル（TCP, UDP等）の抽象化が未実装
+\item 異なるマシン間での実行は不可能
+\item ネットワーク分断やレイテンシの考慮なし
+\end{itemize}
+
+\paragraph{耐障害性の欠如}
+分散システムに必要な耐障害性機能が不十分：
+\begin{itemize}
+\item \textbf{部分的失敗処理}：一部ロケーションの失敗時の回復機構なし
+\item \textbf{タイムアウト機構}：無限待機の可能性
+\item \textbf{メッセージ順序保証}：並行通信における順序の未定義
+\item \textbf{重複検出}：メッセージ重複の処理機構なし
+\end{itemize}
+
+\subsubsection{表現力の制限}
+
+\paragraph{動的ロケーション集合}
+現在の実装では、ロケーション集合がコンパイル時に固定される：
+\begin{itemize}
+\item 実行時でのロケーションの追加・削除が不可能
+\item 動的なクラスタ構成変更に対応できない
+\item スケーラビリティの限界
+\end{itemize}
+
+\paragraph{条件分岐とループ}
+コレオグラフィー内での動的制御構造が制限的：
+\begin{verbatim}
+-- 以下のような動的分岐は困難
+if someCondition
+  then runProtocolA
+  else runProtocolB  -- 異なるロケーション集合を要求する場合
+\end{verbatim}
+
+\paragraph{高階コレオグラフィー}
+コレオグラフィーを引数とする高階関数の表現が制限的。現在の \texttt{conclave} 以外の抽象化機構が不十分。
+
+\subsubsection{実用性の課題}
+
+\paragraph{デバッグとモニタリング}
+分散実行のデバッグ支援が基本的：
+\begin{itemize}
+\item エラーの原因ロケーション特定が困難
+\item 分散状態の可視化機能が不足
+\item パフォーマンスプロファイリング機能なし
+\end{itemize}
+
+\paragraph{既存システムとの統合}
+実用アプリケーションとの統合が困難：
+\begin{itemize}
+\item 既存のネットワークライブラリとの相互運用性
+\item データベースやミドルウェアとの連携
+\item レガシーシステムからの移行パス
+\end{itemize}
+
+\subsubsection{理論的制限}
+
+\paragraph{表現可能なプロトコルクラス}
+現在の理論フレームワークで表現できないプロトコルパターンが存在：
+\begin{itemize}
+\item 非決定的選択を含むプロトコル
+\item 再帰的なプロトコル構造
+\item 状態を持つプロトコル（状態機械的な動作）
+\end{itemize}
+
+\paragraph{段階システムの制限}
+現在の段階システムでは表現できない効果・係数パターン：
+\begin{itemize}
+\item 時間的制約（リアルタイム性）
+\item 確率的動作（故障確率等）
+\item 量的制約（帯域幅、レイテンシ）
+\end{itemize}
+
+\subsubsection{将来の発展方向}
+
+これらの制限を解決するための主要な研究・開発方向として以下が考えられる：
+\begin{enumerate}
+\item \textbf{型推論アルゴリズムの改善}：より自動化された段階推論
+\item \textbf{実行時システムの最適化}：Free モナドからの移行、ネットワーク対応
+\item \textbf{表現力の拡張}：動的制御構造、高階抽象化の支援
+\item \textbf{ツールチェインの整備}：デバッグ、プロファイリング、可視化
+\item \textbf{実用化研究}：具体的ドメインでの検証と改良
+\end{enumerate}
+
+これらの制限にも関わらず、本実装は分散システムの型安全性と正確性を追求する研究の重要な一歩として価値を持つ。

@@ -19,11 +19,11 @@ type A = '["a"]
 type B = '["b"]
 type C = '["c"]
 
--- Enclave containing only locations "a" and "b"
-type EnclaveAB = TS.AsSet '["a", "b"]
+-- Conclave containing only locations "a" and "b"
+type ConclaveAB = TS.AsSet '["a", "b"]
 
 -- Inner choreography that runs only between a and b
-innerChoreography :: Choreography Univ EnclaveAB Int
+innerChoreography :: Choreography Univ ConclaveAB Int
 innerChoreography = CFG.sub $ CFG.do
   let
     -- a has a secret number
@@ -43,27 +43,27 @@ innerChoreography = CFG.sub $ CFG.do
   -- b sends result back to a
   C.comm @"b" bResult
 
--- Main program that uses enclave
+-- Main program that uses conclave
 program :: Choreography Univ Univ Int
 program = CFG.sub $ CFG.do
   let
     -- Located choreography at locations a and b
-    locatedInnerChor :: C.Located Univ EnclaveAB (Choreography Univ EnclaveAB Int)
+    locatedInnerChor :: C.Located Univ ConclaveAB (Choreography Univ ConclaveAB Int)
     locatedInnerChor = new innerChoreography
 
-  -- Run the enclave (only a and b participate)
-  enclaveResult <- C.enclave locatedInnerChor
+  -- Run the conclave (only a and b participate)
+  conclaveResult <- C.conclave locatedInnerChor
 
   let
     -- c has an adder value
     cAdder :: C.Located Univ C Int
     cAdder = new 10
 
-  -- Extract result from enclave and send to all locations
-  result <- C.comm @"a" enclaveResult  -- Assuming result is at location "a"
+  -- Extract result from conclave and send to all locations
+  result <- C.comm @"a" conclaveResult  -- Assuming result is at location "a"
 
   let
-    -- c adds its value to the enclave result
+    -- c adds its value to the conclave result
     cFinalResult :: C.Located Univ C Int
     cFinalResult = (+) CFG.<$> cAdder CFG.<@> result
 
@@ -72,9 +72,9 @@ program = CFG.sub $ CFG.do
 
 main :: IO ()
 main = do
-  putStrLn "=== Running Enclave Demo with Communication Logging ==="
+  putStrLn "=== Running Conclave Demo with Communication Logging ==="
   putStrLn "Expected: Location 'c' should NOT see the secret value '42'"
-  putStrLn "The secret '42' should only be communicated between 'a' and 'b' inside the enclave"
+  putStrLn "The secret '42' should only be communicated between 'a' and 'b' inside the conclave"
   putStrLn ""
 
   let hooks = CommunicationHooks
@@ -94,7 +94,7 @@ main = do
 
   putStrLn ""
   putStrLn "=== Verification ==="
-  putStrLn "If enclave works correctly:"
+  putStrLn "If conclave works correctly:"
   putStrLn "- You should see '42' being sent from 'a' to 'b'"
   putStrLn "- You should see '126' (42*3) being sent from 'b' to 'a'"
   putStrLn "- Location 'c' should NEVER receive or send '42'"
