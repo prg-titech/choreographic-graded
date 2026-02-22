@@ -13,20 +13,14 @@
 
 module Choreographic.Graded.Faceted where
 
-import           Choreographic.Graded.Choreography (Choreography,
-                                                    Communicatable, send)
+import           Choreographic.Graded.Choreography (Choreography)
 import           Choreographic.Graded.Located      (Located)
 import           Choreographic.Graded.Location     (All (unconsWithAll),
-                                                    AllKnownSymbols, IsMember,
-                                                    IsSubset)
-import           Choreographic.Graded.Operation    (comm)
-import           Control.Functor.Graded            (GradedFunctor (..),
-                                                    GradedMonad (..),
-                                                    SubGradable (sub))
+                                                    AllKnownSymbols)
+import           Control.Functor.Graded            (SubGradable (sub))
 import qualified Control.Functor.Graded            as CFG
 import           Data.Proxy                        (Proxy (..))
 import qualified Data.Type.Set                     as TS
-import           GHC.Exts                          (Symbol)
 import           GHC.TypeLits
 
 -- | Faceted values can differ between locations
@@ -46,11 +40,11 @@ faceted :: forall univ ps a.
    AllKnownSymbols ps => Located univ ps a -> Faceted univ ps a
 faceted located = Faceted $ go located
  where
-  go :: forall univ ps a. AllKnownSymbols ps => Located univ ps a -> FacetedImpl univ a ps
+  go :: forall univ' ps' a'. AllKnownSymbols ps' => Located univ' ps' a' -> FacetedImpl univ' a' ps'
   go loc = unconsWithAll
-    (Proxy @(FacetedImpl univ a))
+    (Proxy @(FacetedImpl univ' a'))
     (Proxy @KnownSymbol)
-    (Proxy @ps)
+    (Proxy @ps')
     (\_ _ -> FacetedCons (sub loc) (go (sub loc)))
     undefined
 

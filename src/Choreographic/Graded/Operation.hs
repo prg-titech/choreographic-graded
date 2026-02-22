@@ -22,11 +22,9 @@ import qualified Choreographic.Graded.Choreography as Choreography
 import qualified Choreographic.Graded.Located      as Located
 import           Choreographic.Graded.Location     (AllKnownSymbols, IsMember,
                                                     IsSubset, allKnownSymbols)
-import qualified Control.Functor.Graded            as CFG
 import           Control.Monad                     (forM_, when)
 import           Data.Proxy                        (Proxy (..))
-import           Data.Reflection                   (reifySymbol)
-import           Data.Type.Set                     (IsSet, Nub, Sort, (:++))
+import           Data.Type.Set                     (IsSet)
 import           GHC.TypeLits                      (KnownSymbol, symbolVal)
 import           Prelude                           (Bool (..), Eq (..), IO,
                                                     error, otherwise, pure, ($))
@@ -74,7 +72,7 @@ conclave ::
   (IsSet univ, IsSet ps, Choreographic.Graded.Location.IsSubset ps univ ~ 'True, Choreographic.Graded.Location.AllKnownSymbols ps) =>
   Located.Located univ ps (Choreography.Choreography univ ps a)->
   Choreography.Choreography univ ps (Located.Located univ ps a)
-conclave located = Choreography.Choreography \univ p -> let ps = Choreographic.Graded.Location.allKnownSymbols @ps
+conclave located = Choreography.Choreography \_ p -> let ps = Choreographic.Graded.Location.allKnownSymbols @ps
   in case located of
   Located.Located (Choreography.Choreography mkProcess)
     | p `P.elem` ps -> do
