@@ -42,7 +42,7 @@ instance CFG.GradedComonad (Located univ) where
   duplicate Unlocated   = Unlocated
 
 instance CFG.SubGradable (Located univ) where
-  type Sub (Located univ) (x :: [] Symbol) (y :: [] Symbol) = IsSubset x y ~ 'True
+  type Sub (Located univ) (x :: [] Symbol) (y :: [] Symbol) = IsSubset y x ~ 'True
   sub (Located x) = Located x
   sub Unlocated   = Unlocated
 

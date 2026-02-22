@@ -19,12 +19,11 @@ import           Choreographic.Graded.Choreography (CommInfo (..),
                                                     Communicatable, performIO,
                                                     receive, send)
 import qualified Choreographic.Graded.Choreography as Choreography
-import qualified Choreographic.Graded.Faceted        as Faceted
 import qualified Choreographic.Graded.Located      as Located
-import           Choreographic.Graded.Location     (AllKnownSPymbols (..),
-                                                    IsMember, IsSubset)
+import           Choreographic.Graded.Location     (AllKnownSymbols, IsMember,
+                                                    IsSubset, allKnownSymbols)
 import qualified Control.Functor.Graded            as CFG
-import           Control.Monad                     (forM, forM_, when)
+import           Control.Monad                     (forM_, when)
 import           Data.Proxy                        (Proxy (..))
 import           Data.Reflection                   (reifySymbol)
 import           Data.Type.Set                     (IsSet, Nub, Sort, (:++))
@@ -40,8 +39,8 @@ unsafeGetCurrentProcess = Choreography.Choreography \_ p -> pure p
 comm ::
   forall p ps univ a.
   (IsSet univ, IsSet ps, KnownSymbol p
-    , IsMember p univ ~ 'True, AllKnownSymbols univ
-    , IsMember p ps ~ 'True
+    , Choreographic.Graded.Location.IsMember p univ ~ 'True, Choreographic.Graded.Location.AllKnownSymbols univ
+    , Choreographic.Graded.Location.IsSubset ps univ ~ 'True
     ) =>
   (Communicatable a) =>
   Located.Located univ ps a ->
@@ -72,25 +71,25 @@ comm located =
 
 conclave ::
   forall univ ps a.
-  (IsSet univ, IsSet ps, IsSubset ps univ ~ 'True, AllKnownSymbols ps) =>
+  (IsSet univ, IsSet ps, Choreographic.Graded.Location.IsSubset ps univ ~ 'True, Choreographic.Graded.Location.AllKnownSymbols ps) =>
   Located.Located univ ps (Choreography.Choreography univ ps a)->
   Choreography.Choreography univ ps (Located.Located univ ps a)
-conclave located = Choreography.Choreography \univ p ->
-  let ps = allKnownSymbols (Proxy @ps)
+conclave located = Choreography.Choreography \univ p -> let ps = Choreographic.Graded.Location.allKnownSymbols @ps
   in case located of
-    Located.Located (Choreography.Choreography mkProcess)
-      | p `P.elem` ps -> do
-          a <- mkProcess ps p
-          pure $ Located.Located a
-      | otherwise -> pure Located.Unlocated
-    Located.Unlocated
-      -> pure Located.Unlocated
+  Located.Located (Choreography.Choreography mkProcess)
+    | p `P.elem` ps -> do
+        -- Run the choreography for the conclave
+        a <- mkProcess ps p
+        pure $ Located.Located a
+    | otherwise -> pure Located.Unlocated
+  Located.Unlocated
+    -> pure Located.Unlocated
 
-local :: forall univ ps a p b.
-  (IsSet univ, IsSet ps, KnownSymbol p) =>
+local :: forall p univ a b.
+  (IsSet univ, KnownSymbol p) =>
   Located.Located univ '[p] a ->
   (a -> IO b)  ->
-  Choreography.Choreography univ ps (Located.Located univ '[p] b)
+  Choreography.Choreography univ '[p] (Located.Located univ '[p] b)
 local located ioAction = Choreography.Choreography \_ p -> case located of
   Located.Located a
     | p == symbolVal (Proxy @p) -> do
@@ -101,79 +100,3 @@ local located ioAction = Choreography.Choreography \_ p -> case located of
         -- Other processes return Unlocated (they don't have this value)
         pure Located.Unlocated
   Located.Unlocated -> pure Located.Unlocated
-
-
--- | Convert a Located value to a Faceted value
-faced ::
-  forall univ ps a.
-  Located.Located univ ps a ->
-  Choreography.Choreography univ ps (Faceted.Faceted univ ps a)
-faced located = Choreography.Choreography \_ _ -> case located of
-  Located.Located a -> pure $ Faceted.Faceted a
-  Located.Unlocated -> pure Faceted.Unfaced
-
--- | Apply an IO operation to each location's value in a Faceted value
-foreach ::
-  forall univ ps ps' a b.
-  (AllKnownSymbols ps, IsSubset ps ps' ~ True, Nub
-                      (Sort (ps' :++ ps'))
-                    ~ ps') =>
-  Faceted.Faceted univ ps a ->
-  (forall p. KnownSymbol p => Located.Located univ '[p] a -> Choreography.Choreography univ ps' b) ->
-  Choreography.Choreography univ ps' (Faceted.Faceted univ ps b)
-foreach facedValue choreoFunc =
-  let
-    eachChoreo :: forall p'. KnownSymbol p' => Proxy p' -> Choreography.Choreography univ ps' b
-    eachChoreo _ = choreoFunc @p' $ case facedValue of
-      Faceted.Faceted a -> Located.Located a
-      Faceted.Unfaced -> Located.Unlocated
-
-    stringToChoreo :: P.String -> Choreography.Choreography univ ps' b
-    stringToChoreo pStr = reifySymbol pStr eachChoreo
-
-    psSyms = allKnownSymbols (Proxy @ps)
-  in CFG.do
-    current <- (unsafeGetCurrentProcess :: Choreography.Choreography univ ps' P.String)
-    justAndMaybe <- CFG.forM psSyms $ \pStr ->
-      if pStr == current then
-        P.Just CFG.<$> stringToChoreo pStr
-      else CFG.do
-        _ <- stringToChoreo pStr
-        (CFG.sub $ CFG.return P.Nothing :: Choreography.Choreography univ ps' (P.Maybe b))
-    case P.foldr (\x acc -> case x of P.Just v -> P.Just v; P.Nothing -> acc) P.Nothing justAndMaybe of
-      P.Just v  -> (CFG.sub $ CFG.pure $ Faceted.Faceted v :: Choreography.Choreography univ ps' (Faceted.Faceted univ ps b))
-      P.Nothing -> (CFG.sub $ CFG.pure Faceted.Unfaced :: Choreography.Choreography univ ps' (Faceted.Faceted univ ps b))
-
--- | Collect all values from a Faceted value into a Located list
-collect ::
-  forall univ ps a.
-  (IsSet univ, IsSet ps, IsSubset ps univ ~ 'True, AllKnownSymbols ps, Communicatable a) =>
-  Faceted.Faceted univ ps a ->
-  Choreography.Choreography univ ps (Located.Located univ ps [a])
-collect facedValue = Choreography.Choreography \_ p ->
-  let psSyms = allKnownSymbols (Proxy @ps)
-  in case facedValue of
-    Faceted.Faceted a
-      | p `P.elem` psSyms -> do
-          -- Send this location's value to all other locations in ps
-          forM_ psSyms \p' -> do
-            when (p' /= p) $ do
-              let commInfo = CommInfo { ciFrom = p, ciTo = p' }
-              send commInfo a
-          -- Receive values from all other locations in ps
-          values <- P.mapM (\p' ->
-            if p' == p
-              then pure a
-              else do
-                let commInfo = CommInfo { ciFrom = p', ciTo = p }
-                receive commInfo
-            ) psSyms
-          pure $ Located.Located values
-      | otherwise -> do
-          -- Receive values from all locations in ps
-          values <- P.mapM (\p' -> do
-            let commInfo = CommInfo { ciFrom = p', ciTo = p }
-            receive commInfo
-            ) psSyms
-          pure $ Located.Located values
-    Faceted.Unfaced -> pure Located.Unlocated

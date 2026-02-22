@@ -1,8 +1,12 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE QualifiedDo       #-}
-{-# LANGUAGE TypeApplications  #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NoImplicitPrelude     #-}
+{-# LANGUAGE QualifiedDo           #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE TypeApplications      #-}
 
 module Main where
 
@@ -12,9 +16,12 @@ import           Choreographic.Graded.Location ()
 import           Control.Functor.Graded        (GradedComonadApply (new))
 import qualified Control.Functor.Graded        as CFG
 import qualified Data.Map                      as Map
+import           Data.Proxy                    (Proxy (Proxy))
+import           Data.Type.Bool                (If)
 import qualified Data.Type.Set                 as TS
+import           GHC.Base                      (Symbol)
 import           Prelude                       (Bool (..), IO, Int, Ord (..),
-                                                String, print, ($))
+                                                String, print, undefined, ($))
 
 type Univ = TS.AsSet '["a", "b"]
 
